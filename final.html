@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Family Chat</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+
+// ---------- Firebase Config ----------
+const firebaseConfig = {
+    apiKey: "AIzaSyBOXLMnDOe43t6azhKjSkQT2Qo-BB-6rdg",
+    authDomain: "family-chat-f6975.firebaseapp.com",
+    projectId: "family-chat-f6975",
+    storageBucket: "family-chat-f6975.appspot.com",
+    messagingSenderId: "63060096106",
+    appId: "1:63060096106:web:8c2f405c7a53717d238613"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+// ---------- USER PROMPT ----------
+let username = "";
+while (!username) {
+    username = prompt("Enter your name for Family Chat:");
+}
+document.getElementById("userLabel").textContent = username;
+
+// ---------- DOM ----------
+const messagesDiv = document.getElementById("messages");
+const input = document.getElementById("messageInput");
+const sendBtn = document.getElementById("sendBtn");
+const photoBtn = document.getElementById("photoBtn");
+const photoInput = document.getElementById("photoInput");
+const todoInput = document.getElementById("todoInput");
+const addTodoBtn = document.getElementById("addTodoBtn");
+const todoListDiv = document.getElementById("todoList");
+
+// ---------- SEND TEXT MESSAGE ----------
+async function sendMessage(text, photoURL = null) {
+    if (!text && !photoURL) return;
+    await addDoc(collection(db, "familyMessages"), {
+        username: username,
+        text: text || "",
+        photo: photoURL || "",
+        time: Date.now()
+    });
+}
+
+// ---------- SEND BUTTON ----------
+sendBtn.addEventListener("click", () => {
+    sendMessage(input.value);
+    input.value = "";
+});
+
+// ---------- ENTER KEY SEND ----------
+input.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") sendBtn.click();
+});
+
+// ---------- UPLOAD PHOTO ----------
+photoBtn.addEventListener("click", () => photoInput.click());
+photoInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const storageRef = ref(storage, "photos/" + Date.now() + "_" + file.name);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    sendMessage("", url);
+    photoInput.value = "";
+});
+
+// ---------- REALTIME MESSAGES ----------
+const q = query(collection(db, "familyMessages"), orderBy("time"));
+onSnapshot(q, (snapshot) => {
+    messagesDiv.innerHTML = "";
+    snapshot.forEach((doc) => {
+        const data = doc.data();
+        const msgDiv = document.createElement("div");
+        msgDiv.className = "msg";
+        msgDiv.innerHTML = `<strong>${data.username}:</strong> ${data.text}`;
+        if (data.photo) {
+            const img = document.createElement("img");
+            img.src = data.photo;
+            img.style.maxWidth = "200px";
+            img.style.display = "block";
+            img.style.marginTop = "5px";
+            msgDiv.appendChild(img);
+        }
+        messagesDiv.appendChild(msgDiv);
+    });
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+});
+
+// ---------- TO-DO LIST ----------
+async function updateTodoList() {
+    const docRef = doc(db, "familyData", "sharedTodo");
+    const docSnap = await getDoc(docRef);
+    todoListDiv.innerHTML = "";
+    if (docSnap.exists()) {
+        const todos = docSnap.data().todos || [];
+        todos.forEach((item) => {
+            const div = document.createElement("div");
+            div.textContent = item;
+            div.style.padding = "5px";
+            div.style.borderBottom = "1px solid #ccc";
+            todoListDiv.appendChild(div);
+        });
+    }
+}
+
+addTodoBtn.addEventListener("click", async () => {
+    const val = todoInput.value.trim();
+    if (!val) return;
+    const docRef = doc(db, "familyData", "sharedTodo");
+    const docSnap = await getDoc(docRef);
+    let todos = [];
+    if (docSnap.exists()) todos = docSnap.data().todos || [];
+    todos.push(val);
+    await updateDoc(docRef, { todos });
+    todoInput.value = "";
+});
+
+// ---------- REALTIME TO-DO ----------
+const todoRef = doc(db, "familyData", "sharedTodo");
+onSnapshot(todoRef, () => updateTodoList());
+
+// INIT TO-DO
+(async () => {
+    const docRef = doc(db, "familyData", "sharedTodo");
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) await updateDoc(docRef, { todos: [] }).catch(() => {});
+    updateTodoList();
+})();
+</script>
+
+<style>
+/* ---------------- GENERAL ---------------- */
+body { margin:0; font-family: Arial; display:flex; flex-wrap: wrap; height:100vh; }
+.avatar { width:30%; min-width:250px; background: linear-gradient(135deg,#5b86e5,#36d1dc); display:flex; align-items:center; justify-content:center; flex-direction:column; }
+.chat { width:40%; min-width:300px; display:flex; flex-direction:column; background:white; }
+.todo { width:30%; min-width:200px; padding:10px; background:#f0f0f0; display:flex; flex-direction:column; }
+
+#avatarCanvas { width:250px; height:250px; }
+#messages { flex:1; overflow-y:auto; padding:10px; border-bottom:1px solid #ccc; }
+.msg { padding:8px; background:#dfe6ff; margin-bottom:5px; border-radius:6px; }
+#inputArea { display:flex; padding:10px; border-top:1px solid #ccc; flex-wrap: wrap; }
+#messageInput { flex:1; padding:8px; border-radius:6px; border:1px solid #ddd; margin-bottom:5px; }
+#sendBtn, #photoBtn { padding:8px 12px; margin-left:5px; border:none; border-radius:6px; cursor:pointer; }
+#sendBtn { background:#5b86e5; color:white; }
+#photoBtn { background:#36d1dc; color:white; }
+#photoInput { display:none; }
+
+#todoList { flex:1; overflow-y:auto; margin-top:10px; }
+#todoInput { padding:8px; border-radius:6px; border:1px solid #ccc; flex:1; margin-bottom:5px; }
+#addTodoBtn { padding:8px 12px; border:none; border-radius:6px; background:#5b86e5; color:white; margin-left:5px; cursor:pointer; }
+#userLabel { color:white; font-weight:bold; margin-bottom:10px; text-align:center; }
+
+/* ---------------- RESPONSIVE ---------------- */
+@media screen and (max-width:900px) {
+    body { flex-direction: column; height:auto; }
+    .avatar, .chat, .todo { width:100%; min-width:0; margin-bottom:10px; }
+    #avatarCanvas { width:200px; height:200px; }
+    #inputArea, #addTodoBtn { flex-wrap: wrap; }
+    #messageInput, #todoInput { width:100%; margin-bottom:5px; }
+}
+</style>
+</head>
+
+<body>
+
+<div class="avatar">
+    <div id="userLabel"></div>
+    <canvas id="avatarCanvas"></canvas>
+</div>
+
+<div class="chat">
+    <h2 style="text-align:center;">Family Chat</h2>
+    <div id="messages"></div>
+    <div id="inputArea">
+        <input id="messageInput" placeholder="Type message...">
+        <button id="sendBtn">Send</button>
+        <button id="photoBtn">📷</button>
+        <input type="file" id="photoInput" accept="image/*">
+    </div>
+</div>
+
+<div class="todo">
+    <h3>Shared To-Do List</h3>
+    <div id="todoList"></div>
+    <div style="display:flex; margin-top:5px;">
+        <input id="todoInput" placeholder="Add new task">
+        <button id="addTodoBtn">Add</button>
+    </div>
+</div>
+
+<script>
+// 3D Avatar
+const canvas = document.getElementById("avatarCanvas");
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true });
+renderer.setSize(250, 250);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+camera.position.z = 3;
+const geometry = new THREE.SphereGeometry(1, 32, 32);
+const material = new THREE.MeshNormalMaterial();
+const sphere = new THREE.Mesh(geometry, material);
+scene.add(sphere);
+function animate() {
+    requestAnimationFrame(animate);
+    sphere.rotation.x += 0.01;
+    sphere.rotation.y += 0.01;
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+
+</body>
+</html>
